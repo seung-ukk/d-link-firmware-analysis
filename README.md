@@ -15,46 +15,20 @@ docker info --format '{{.OSType}} {{.ServerVersion}}'
 python3 -c 'from cryptography.hazmat.primitives.ciphers import Cipher; print("ready")'
 ```
 
-`linux ...`과 `ready`를 확인한다. Python 모듈이 없으면 Ubuntu에서 `sudo apt-get update` 후 `sudo apt-get install python3-cryptography`를 실행한다. 다른 도구가 없으면 `sudo apt-get install curl file xxd binutils jq`로 준비한다. **화면 1:** Docker 엔진과 도구 확인.
+`linux ...`과 `ready`를 확인한다. Python 모듈이 없으면 Ubuntu에서 `sudo apt-get update` 후 `sudo apt-get install python3-cryptography`를 실행한다. 다른 도구가 없으면 `sudo apt-get install curl file xxd binutils jq`로 준비한다. **준비 화면:** Docker 엔진과 도구 확인.
 
 ```bash
 curl -fL 'https://support.dlink.com/resource/products/dir-882/REVA/DIR-882_REVA_FIRMWARE_v1.30B06.zip' -o firmware/original.zip
 curl -fL 'https://support.dlink.com/resource/products/dir-882/REVA/DIR-882_REVA_FIRMWARE_v1.30B06%20HOTFIX_B03.zip' -o firmware/hotfix_b03.zip
-python3 lab/firmware.py verify original
-python3 lab/firmware.py verify hotfix_b03
 ```
 
-브라우저에서 받아 위 이름으로 놓아도 된다. `verify`는 ZIP SHA-256, CRC, 내부 BIN·PDF 목록을 확인한다. 원본 ZIP의 SHA-256은 `fe85902d34cbeae8340fb6f9bf05117d445bcedf3fc6b8b017c3bedf2baff86a`, Hotfix는 `79e8712201b40ea128b8e776d7d0c02c0ae25e58b60d0b02d3d928eaa2cea5d1`이다. 다르면 파일명·버전·다운로드 완료 여부를 확인한다. **화면 2:** 두 ZIP 검사.
+브라우저에서 받아 위 이름으로 놓아도 된다. 다음의 1차 수동 실습에서 ZIP 목록·SHA-256·압축 상태를 **각 명령으로 직접 확인**한다.
 
-## 1. 1차 보고서: 단계별 언패킹
+## 1. 1차 보고서: 직접 명령을 입력하는 수동 실습
 
-각 줄을 직접 실행하고 출력을 확인한다. 같은 단계의 출력 파일이 이미 있으면 도구가 덮어쓰지 않고 중단한다. Docker로 복호화용 Python을 준비하려면 `docker build -f lab/Dockerfile.unpack -t dir882-unpack:local .`을 실행하고 각 Python 호출을 `docker run --rm --network none -v "$PWD:/work" dir882-unpack:local python3 lab/firmware.py <단계> <버전>`으로 바꿀 수 있다.
+**[1차 수동 실습 안내서](docs/1차_수동_실습.md)를 위에서 아래로 실행한다.** 보고서에서 실제 수행한 것처럼 `unzip -l`, `unzip -t`, `unzip -n`, `xxd`, `file`을 각각 입력하고, SHRS 복호화·LZMA 해제·CPIO 추출은 내용을 볼 수 있는 `python3 - <<'PY'` 블록을 한 단계씩 입력한다. 각 블록 뒤에 실제 크기·형식·항목 수를 확인하고 캡션 위치를 기록한다. 전체를 한 번에 실행하는 `.sh`는 사용하지 않는다.
 
-```bash
-python3 lab/firmware.py unzip original
-python3 lab/firmware.py unzip hotfix_b03
-python3 lab/firmware.py decrypt original
-python3 lab/firmware.py decrypt hotfix_b03
-python3 lab/firmware.py kernel original
-python3 lab/firmware.py kernel hotfix_b03
-python3 lab/firmware.py initramfs original
-python3 lab/firmware.py initramfs hotfix_b03
-python3 lab/firmware.py rootfs original
-python3 lab/firmware.py rootfs hotfix_b03
-```
-
-순서는 ZIP에서 BIN·PDF 추출 → SHRS의 AES-CBC 복호화와 내부 SHA-512 검사 세 개 → uImage의 LZMA 커널 해제 → 커널 내부의 별도 LZMA initramfs 추출 → newc CPIO의 rootfs 추출이다. CPIO 링크·장치 파일은 생성하지 않고 목록으로 기록한다. 각 버전에서 CPIO는 1,693항목, 디렉터리 144, 일반 파일 1,392, 링크 목록 157이 예상된다. **화면 3:** SHRS·uImage·CPIO 단계 출력.
-
-```bash
-file analysis/original/initramfs.cpio analysis/hotfix_b03/initramfs.cpio
-find analysis/original/rootfs -maxdepth 2 -type d | sort
-find analysis/hotfix_b03/rootfs -maxdepth 2 -type d | sort
-file analysis/original/rootfs/bin/lighttpd analysis/original/rootfs/bin/prog.cgi analysis/original/rootfs/lib/librcm.so
-grep -nE 'mod_fastcgi|server.document-root|fastcgi.server|/HNAP1/|bin-path|cgi.assign' analysis/original/rootfs/etc_ro/lighttpd/lighttpd.conf
-readelf -d analysis/original/rootfs/bin/prog.cgi | grep NEEDED
-```
-
-`etc_ro/lighttpd`, `bin`, `lib`, `www` 구조를 확인한다. `lighttpd` 설정에서 `/HNAP1/`의 FastCGI `bin-path`가 `/bin/prog.cgi`인지 본다. `readelf`는 `prog.cgi`가 요구하는 공유 라이브러리를 보여준다. Hotfix도 `original`을 `hotfix_b03`으로 바꾸어 확인한다. **화면 4:** rootfs 구조. **화면 5:** 웹 서버 설정·MIPS ELF·의존성.
+수동 추출에서 링크 대상은 `rootfs_inventory.json`에 기록한다. 2차 실습의 `prepare_full_rootfs.py`가 이 목록을 사용해 실행용 라이브러리 복사본을 만들기 때문이다. `lab/firmware.py`는 절차를 빠르게 검증할 때만 쓰는 **선택용 도구**이며 1차 보고서 수동 실습 명령이 아니다. 이후 단계의 화면 번호는 수동 안내서의 화면 1~16 뒤에 이어서 매긴다.
 
 ## 2. 2차 보고서: Docker 준비
 
@@ -67,7 +41,7 @@ docker build -f analysis/emulation/Dockerfile.sink-probe -t dir882-sink-probe:lo
 docker image ls --filter 'reference=dir882-*'
 ```
 
-첫 명령은 추출한 rootfs로부터 실행용 복사본과 라이브러리 링크의 일반 파일 복사본을 만든다. 이미지 계층은 `qemu-user` → `gdb-multiarch` → MIPS binutils·`jq`이며, 별도의 `sink-probe` 이미지에는 Qiling·Unicorn 등이 있다. Dockerfile과 `requirements.txt`가 이미지 생성 방법의 근거다. 빌드 실패 시 Docker Linux 엔진과 패키지 다운로드를 확인한다. **화면 6:** Dockerfile 계층과 이미지 목록.
+첫 명령은 추출한 rootfs로부터 실행용 복사본과 라이브러리 링크의 일반 파일 복사본을 만든다. 이미지 계층은 `qemu-user` → `gdb-multiarch` → MIPS binutils·`jq`이며, 별도의 `sink-probe` 이미지에는 Qiling·Unicorn 등이 있다. Dockerfile과 `requirements.txt`가 이미지 생성 방법의 근거다. 빌드 실패 시 Docker Linux 엔진과 패키지 다운로드를 확인한다. **화면 17:** Dockerfile 계층과 이미지 목록.
 
 ### 2.1 원본 FastCGI 요청과 GDB
 
@@ -100,7 +74,7 @@ mipsel-linux-gnu-objdump -d --start-address=0x454ee8 --stop-address=0x454f28 /fi
 exit
 ```
 
-`/probe.py`는 `lighttpd` 없이 FastCGI 클라이언트 역할을 해 SOAP 요청을 실제 MIPS `prog.cgi`에 보낸다. QEMU가 프로그램을 실행하고 GDB가 분기와 호출을 기록한다. 정상·시험 입력 모두 `OK`·`CONTINUE`가 예상된다. 시험 문자열이 `portforward_rule` 저장 호출 인자에 남는지 확인한다. 요청 단계의 `marker_file_created=false`는 예상 범위다. HTTP 인증·전체 웹 서버 동작은 실험 대상이 아니다. **화면 7:** 두 `jq` 결과·GDB 기록·원본 역어셈블.
+`/probe.py`는 `lighttpd` 없이 FastCGI 클라이언트 역할을 해 SOAP 요청을 실제 MIPS `prog.cgi`에 보낸다. QEMU가 프로그램을 실행하고 GDB가 분기와 호출을 기록한다. 정상·시험 입력 모두 `OK`·`CONTINUE`가 예상된다. 시험 문자열이 `portforward_rule` 저장 호출 인자에 남는지 확인한다. 요청 단계의 `marker_file_created=false`는 예상 범위다. HTTP 인증·전체 웹 서버 동작은 실험 대상이 아니다. **화면 18:** 두 `jq` 결과·GDB 기록·원본 역어셈블.
 
 ### 2.2 Hotfix의 동일 요청
 
@@ -131,7 +105,7 @@ mipsel-linux-gnu-objdump -d --start-address=0x455b68 --stop-address=0x455bc0 /fi
 exit
 ```
 
-정상 IP는 `tbsCheckIp` 반환 `1`로 진행한다. 시험 문자열은 반환 `0`, `GET_JSON_NULL_ERROR`·`REJECT`, 저장·서비스 적용 호출 없음이 예상된다. 역어셈블의 근접 심볼 이름만으로 요청 처리 함수명을 단정하지 않는다. **화면 8:** Hotfix의 검사 호출·거부 분기·역어셈블.
+정상 IP는 `tbsCheckIp` 반환 `1`로 진행한다. 시험 문자열은 반환 `0`, `GET_JSON_NULL_ERROR`·`REJECT`, 저장·서비스 적용 호출 없음이 예상된다. 역어셈블의 근접 심볼 이름만으로 요청 처리 함수명을 단정하지 않는다. **화면 19:** Hotfix의 검사 호출·거부 분기·역어셈블.
 
 WSL에서 네 결과를 한 표로 확인한다.
 
@@ -139,7 +113,7 @@ WSL에서 네 결과를 한 표로 확인한다.
 jq -r '[.firmware, .local_ip, .soap_result, .first_localip_decision, (.nvram_safe_set_seen|tostring), (.service_apply_seen|tostring), (.process_exit_code|tostring), (.gdb_exit_code|tostring), (.client_error|tostring)] | @tsv' output/hands_on/manual_original_normal.json output/hands_on/manual_original_marker.json output/hands_on/manual_hotfix_normal.json output/hands_on/manual_hotfix_marker.json
 ```
 
-**화면 9:** 원본·Hotfix 네 경우의 비교표. 모든 경우 `process_exit_code=0`, `gdb_exit_code=0`, `client_error=null`인지 확인한다.
+**화면 20:** 원본·Hotfix 네 경우의 비교표. 모든 경우 `process_exit_code=0`, `gdb_exit_code=0`, `client_error=null`인지 확인한다.
 
 ### 2.3 별도의 MIPS 규칙 적용·BusyBox 셸 실험
 
@@ -183,7 +157,7 @@ docker run --rm --network none --read-only --cap-drop ALL \
 ls -l output/qiling_guest_runtime/original/tmp/d882
 ```
 
-시험 규칙에서만 `guest_marker_exists=true`, `guest_marker_size=0`을 확인한다. 시험용 파일시스템에는 `iptables`가 없어 셸 종료 코드 `127`과 `/dev/null` 접근 오류가 나올 수 있다. **방화벽 적용 성공과 셸 명령 치환 효과를 구분한다.** Hotfix는 앞선 요청 단계에서 시험 입력을 거부했으므로, 임의로 주입한 Hotfix 규칙의 셸 실행을 패치 증거로 사용하지 않는다. 재실습할 때는 시험용 마커 하나만 `rm -f -- output/qiling_guest_runtime/original/tmp/d882`로 지우고 실행 전 부재를 확인한다. **화면 10:** 정상 규칙 마커 미생성. **화면 11:** 시험 규칙의 셸 인자와 0바이트 마커.
+시험 규칙에서만 `guest_marker_exists=true`, `guest_marker_size=0`을 확인한다. 시험용 파일시스템에는 `iptables`가 없어 셸 종료 코드 `127`과 `/dev/null` 접근 오류가 나올 수 있다. **방화벽 적용 성공과 셸 명령 치환 효과를 구분한다.** Hotfix는 앞선 요청 단계에서 시험 입력을 거부했으므로, 임의로 주입한 Hotfix 규칙의 셸 실행을 패치 증거로 사용하지 않는다. 재실습할 때는 시험용 마커 하나만 `rm -f -- output/qiling_guest_runtime/original/tmp/d882`로 지우고 실행 전 부재를 확인한다. **화면 21:** 정상 규칙 마커 미생성. **화면 22:** 시험 규칙의 셸 인자와 0바이트 마커.
 
 ## 보고서에 쓸 수 있는 결론과 한계
 
