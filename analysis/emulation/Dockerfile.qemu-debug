@@ -1,0 +1,2 @@
+FROM dir882-qemu-probe:local
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends gdb-multiarch && rm -rf /var/lib/apt/lists/*

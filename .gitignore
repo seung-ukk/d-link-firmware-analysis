@@ -1,0 +1,14 @@
+# Obtain these ZIPs from D-Link and place them locally; do not commit them.
+/firmware/*
+!/firmware/.gitkeep
+
+# All decoded and extracted firmware, generated runtimes, and measurements.
+/analysis/original/
+/analysis/hotfix_b03/
+/analysis/emulation/runtime/
+/analysis/emulation/runtime_full/
+/output/
+/manual_runs/
+**/__pycache__/
+*.pyc
+.DS_Store
